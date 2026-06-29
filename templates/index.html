@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Waynedale Routes</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: Arial, sans-serif;
+    background: #111;
+    color: #eee;
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    padding: 12px;
+    gap: 12px;
+  }
+
+  /* ── Search bar ── */
+  .bar {
+    display: flex;
+    gap: 8px;
+  }
+  #query {
+    flex: 1;
+    font-size: 1.8rem;
+    padding: 10px 14px;
+    border: 2px solid #333;
+    border-radius: 10px;
+    background: #1e1e1e;
+    color: #fff;
+    outline: none;
+  }
+  #query:focus { border-color: #e94560; }
+
+  .btn {
+    font-size: 1.6rem;
+    padding: 10px 16px;
+    border: none;
+    border-radius: 10px;
+    background: #2a2a2a;
+    color: #eee;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+  .btn:active, .btn.active { background: #e94560; }
+
+  /* ── Results area ── */
+  #results {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  /* Single unambiguous result */
+  .big-result {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    flex: 1;
+    text-align: center;
+  }
+  .big-result .carrier {
+    font-size: clamp(5rem, 22vw, 11rem);
+    font-weight: 900;
+    color: #e94560;
+    line-height: 1;
+    letter-spacing: -2px;
+  }
+  .big-result .detail {
+    font-size: clamp(1rem, 4vw, 1.6rem);
+    color: #888;
+    margin-top: 10px;
+  }
+  .big-result .zip {
+    font-size: 1rem;
+    color: #555;
+    margin-top: 4px;
+  }
+
+  /* Multiple results list */
+  .result-item {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    background: #1e1e1e;
+    border-radius: 10px;
+    padding: 14px 18px;
+    border: 1px solid #2a2a2a;
+  }
+  .result-item .carrier {
+    font-size: 2.2rem;
+    font-weight: 900;
+    color: #e94560;
+    min-width: 90px;
+  }
+  .result-item .info { flex: 1; }
+  .result-item .street {
+    font-size: 1.1rem;
+    font-weight: bold;
+  }
+  .result-item .range {
+    font-size: 0.9rem;
+    color: #888;
+    margin-top: 2px;
+  }
+
+  /* Status / hint */
+  .hint {
+    text-align: center;
+    color: #444;
+    font-size: 1rem;
+    padding: 20px;
+  }
+
+  /* ── Carrier reverse-lookup view ── */
+  .carrier-header {
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+    padding: 14px 18px;
+    background: #1e1e1e;
+    border-radius: 10px;
+    border: 2px solid #e94560;
+  }
+  .carrier-header .code {
+    font-size: 2.6rem;
+    font-weight: 900;
+    color: #e94560;
+  }
+  .carrier-header .count {
+    font-size: 0.95rem;
+    color: #555;
+  }
+  .carrier-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px;
+    background: #1a1a1a;
+    border-radius: 8px;
+    border: 1px solid #222;
+  }
+  .carrier-item .ci-carrier {
+    font-size: 1.1rem;
+    font-weight: 900;
+    color: #e94560;
+    min-width: 56px;
+  }
+  .carrier-item .ci-info { flex: 1; }
+  .carrier-item .ci-street {
+    font-size: 1rem;
+    font-weight: bold;
+  }
+  .carrier-item .ci-detail {
+    font-size: 0.82rem;
+    color: #666;
+    margin-top: 2px;
+  }
+
+  /* Voice listening indicator */
+  #query.listening {
+    border-color: #e94560;
+    animation: pulse 1s infinite;
+  }
+  @keyframes pulse {
+    0%,100% { border-color: #e94560; }
+    50%      { border-color: #ff8099; }
+  }
+</style>
+</head>
+<body>
+
+<div class="bar">
+  <input id="query" type="text" placeholder="Address or street name…" autocomplete="off" autocorrect="off" spellcheck="false">
+  <button class="btn" id="micBtn" title="Voice input">🎤</button>
+  <button class="btn" onclick="clearAll()" title="Clear">✕</button>
+</div>
+
+<div id="results">
+  <p class="hint">Type or speak an address — number, street, even/odd</p>
+</div>
+
+<script>
+const queryEl  = document.getElementById('query');
+const resultsEl = document.getElementById('results');
+const micBtn   = document.getElementById('micBtn');
+
+// Carrier lookup pattern: C or R followed by 1–3 digits, nothing else
+const CARRIER_RE = /^[CcRr]\d{1,3}$/;
+
+let debounce;
+
+queryEl.addEventListener('input', () => {
+  clearTimeout(debounce);
+  debounce = setTimeout(() => runSearch(queryEl.value), 220);
+});
+
+function clearAll() {
+  queryEl.value = '';
+  resultsEl.innerHTML = '<p class="hint">Type or speak an address — number, street, even/odd<br>Or type C087 / R008 to list all streets on a route</p>';
+  queryEl.focus();
+}
+
+function par(code) {
+  return code === 'E' ? ' · Even' : code === 'O' ? ' · Odd' : '';
+}
+
+function runSearch(q) {
+  const trimmed = q.trim();
+  if (!trimmed) { clearAll(); return; }
+
+  if (CARRIER_RE.test(trimmed)) {
+    fetch('/carrier?q=' + encodeURIComponent(trimmed))
+      .then(r => r.json())
+      .then(renderCarrier);
+  } else {
+    fetch('/search?q=' + encodeURIComponent(trimmed))
+      .then(r => r.json())
+      .then(renderSearch);
+  }
+}
+
+/* ── Address search results ── */
+function renderSearch(results) {
+  if (!results.length) {
+    resultsEl.innerHTML = '<p class="hint">No match — try just the street name or number</p>';
+    return;
+  }
+
+  if (results.length === 1) {
+    const r = results[0];
+    resultsEl.innerHTML = `
+      <div class="big-result">
+        <div class="carrier">${r.carrier}</div>
+        <div class="detail">${r.street_name} &nbsp; ${r.range_start}–${r.range_end}${par(r.even_odd)}</div>
+        <div class="zip">${r.zip_code}</div>
+      </div>`;
+    return;
+  }
+
+  resultsEl.innerHTML = results.map(r => `
+    <div class="result-item">
+      <div class="carrier">${r.carrier}</div>
+      <div class="info">
+        <div class="street">${r.street_name}</div>
+        <div class="range">${r.range_start}–${r.range_end}${par(r.even_odd)} &nbsp;·&nbsp; ${r.zip_code}</div>
+      </div>
+    </div>`).join('');
+}
+
+/* ── Carrier reverse-lookup results ── */
+function renderCarrier(results) {
+  if (!results.length) {
+    resultsEl.innerHTML = '<p class="hint">No streets found for that carrier</p>';
+    return;
+  }
+
+  // Collect unique carrier codes returned
+  const codes = [...new Set(results.map(r => r.carrier))].sort().join(', ');
+
+  resultsEl.innerHTML =
+    `<div class="carrier-header">
+       <span class="code">${codes}</span>
+       <span class="count">${results.length} entries</span>
+     </div>` +
+    results.map(r => `
+      <div class="carrier-item">
+        <div class="ci-carrier">${r.carrier}</div>
+        <div class="ci-info">
+          <div class="ci-street">${r.street_name}</div>
+          <div class="ci-detail">${r.range_start}–${r.range_end}${par(r.even_odd)} · ${r.zip_code}</div>
+        </div>
+      </div>`).join('');
+}
+
+// ── Voice input (push-to-talk) ───────────────────────────────
+const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+if (SpeechRec) {
+  const rec = new SpeechRec();
+  rec.lang = 'en-US';
+  rec.interimResults = false;
+  rec.maxAlternatives = 1;
+  let listening = false;
+
+  rec.onresult = e => {
+    const text = e.results[0][0].transcript;
+    queryEl.value = text;
+    runSearch(text);
+  };
+
+  rec.onend = () => {
+    listening = false;
+    queryEl.classList.remove('listening');
+    micBtn.classList.remove('active');
+  };
+
+  rec.onerror = () => {
+    listening = false;
+    queryEl.classList.remove('listening');
+    micBtn.classList.remove('active');
+  };
+
+  function startRec(e) {
+    e.preventDefault();
+    if (listening) return;
+    listening = true;
+    queryEl.classList.add('listening');
+    micBtn.classList.add('active');
+    try { rec.start(); } catch(_) {}
+  }
+
+  function stopRec(e) {
+    e.preventDefault();
+    if (!listening) return;
+    try { rec.stop(); } catch(_) {}
+  }
+
+  micBtn.addEventListener('mousedown',  startRec);
+  micBtn.addEventListener('touchstart', startRec, { passive: false });
+  micBtn.addEventListener('mouseup',    stopRec);
+  micBtn.addEventListener('touchend',   stopRec,  { passive: false });
+  micBtn.addEventListener('mouseleave', stopRec);
+} else {
+  micBtn.style.display = 'none';
+}
+</script>
+</body>
+</html>
