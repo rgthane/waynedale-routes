@@ -1,0 +1,713 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Waynedale Routes</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: Arial, sans-serif;
+    background: #111;
+    color: #eee;
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    padding: 12px;
+    gap: 12px;
+  }
+  .bar { display: flex; gap: 8px; }
+  #query {
+    flex: 1;
+    font-size: 1.8rem;
+    padding: 10px 14px;
+    border: 2px solid #333;
+    border-radius: 10px;
+    background: #1e1e1e;
+    color: #fff;
+    outline: none;
+  }
+  #query:focus { border-color: #e94560; }
+  .btn {
+    font-size: 1.6rem;
+    padding: 10px 16px;
+    border: none;
+    border-radius: 10px;
+    background: #2a2a2a;
+    color: #eee;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+  .btn:active, .btn.active { background: #e94560; }
+  #results {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .big-result {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    flex: 1;
+    text-align: center;
+  }
+  .big-result .carrier {
+    font-size: clamp(5rem, 22vw, 11rem);
+    font-weight: 900;
+    color: #e94560;
+    line-height: 1;
+    letter-spacing: -2px;
+  }
+  .big-result .detail { font-size: clamp(1rem, 4vw, 1.6rem); color: #888; margin-top: 10px; }
+  .big-result .zip { font-size: 1rem; color: #555; margin-top: 4px; }
+  .result-item {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    background: #1e1e1e;
+    border-radius: 10px;
+    padding: 14px 18px;
+    border: 1px solid #2a2a2a;
+  }
+  .result-item .carrier { font-size: 2.2rem; font-weight: 900; color: #e94560; min-width: 90px; }
+  .result-item .info { flex: 1; }
+  .result-item .street { font-size: 1.1rem; font-weight: bold; }
+  .result-item .range { font-size: 0.9rem; color: #888; margin-top: 2px; }
+  .hint { text-align: center; color: #444; font-size: 1rem; padding: 20px; }
+  .carrier-header {
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+    padding: 14px 18px;
+    background: #1e1e1e;
+    border-radius: 10px;
+    border: 2px solid #e94560;
+  }
+  .carrier-header .code { font-size: 2.6rem; font-weight: 900; color: #e94560; }
+  .carrier-header .count { font-size: 0.95rem; color: #555; }
+  .carrier-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px;
+    background: #1a1a1a;
+    border-radius: 8px;
+    border: 1px solid #222;
+  }
+  .carrier-item .ci-carrier { font-size: 1.1rem; font-weight: 900; color: #e94560; min-width: 56px; }
+  .carrier-item .ci-info { flex: 1; }
+  .carrier-item .ci-street { font-size: 1rem; font-weight: bold; }
+  .carrier-item .ci-detail { font-size: 0.82rem; color: #666; margin-top: 2px; }
+  #query.listening { border-color: #e94560; animation: pulse 1s infinite; }
+  @keyframes pulse {
+    0%,100% { border-color: #e94560; }
+    50%      { border-color: #ff8099; }
+  }
+</style>
+</head>
+<body>
+
+<div class="bar">
+  <input id="query" type="text" placeholder="Address or street name…" autocomplete="off" autocorrect="off" spellcheck="false">
+  <button class="btn" id="micBtn" title="Voice input">🎤</button>
+  <button class="btn" onclick="clearAll()" title="Clear">✕</button>
+</div>
+
+<div id="results">
+  <p class="hint">Type or speak an address — number, street, even/odd</p>
+</div>
+
+<script>
+// Route data: [zip, street, start, end, parity, carrier]
+// parity: 'E' = even only, 'O' = odd only, '' = both
+const ROUTES = [
+['46809','GLASTONBURY',1,99999,'','98'],
+['46809','2ND ST',10400,10498,'E','C095'],
+['46809','10TH ST',10400,10599,'','C095'],
+['46809','AIR ST',3400,4199,'','C095'],
+['46809','AIR GUARD RD',10400,11099,'','C095'],
+['46809','AIRPORT DR',8900,10399,'','C095'],
+['46809','AIRPORT EXPY',3800,5399,'','R008'],
+['46809','ALGONQUIN PASS',3500,3620,'','C087'],
+['46809','ALGONQUIN PASS',3601,3698,'','C086'],
+['46809','ALGONQUIN PASS',3649,3699,'O','C087'],
+['46809','ALLEGANY AVE',2400,3199,'','C089'],
+['46809','ALLENDALE CT',6000,6099,'','C089'],
+['46809','ALLENDALE DR',5500,5999,'','C089'],
+['46809','ALMA AVE',2400,2799,'','C095'],
+['46809','ALPINE AVE',3300,3499,'','C086'],
+['46809','ALTITUDE DR',4400,4599,'','R008'],
+['46809','AMERICAN WAY',2400,2999,'','C095'],
+['46809','ANOKA DR',7700,8099,'','R008'],
+['46809','APACHE CT',2000,2199,'','C087'],
+['46809','ARBOR AVE',5600,5999,'','C089'],
+['46809','ARDMORE AVE',4400,7398,'','R011'],
+['46809','ARDMORE AVE',9000,10099,'','R008'],
+['46809','ARROW DR',4200,4599,'','C086'],
+['46809','ASHWOOD DR',4700,5099,'','R011'],
+['46809','AUTUMN KNOLL CT',4900,4999,'','C089'],
+['46809','AVIATION DR',8500,8899,'','R008'],
+['46809','AVIONICS DR',9200,9499,'','R008'],
+['46809','BAER RD',6500,7899,'','C094'],
+['46809','BAER RD',8000,8201,'','R008'],
+['46809','BAER FIELD THRUWAY',2400,3699,'','C095'],
+['46809','BEATY AVE',6300,6699,'','C083'],
+['46809','BEATY AVE',6900,7419,'','C094'],
+['46809','BEATY AVE',7420,7466,'','C006'],
+['46809','BEATY AVE',7452,7499,'','C094'],
+['46809','BEATY AVE',7500,7699,'','C096'],
+['46809','BELINERS RD',19601,19699,'O','C083'],
+['46809','BELLE VISTA BLVD',2300,2699,'','C083'],
+['46809','BELLE VISTA BLVD',2700,2899,'','C089'],
+['46809','BLUE SPRUCE CT',6100,6199,'','C083'],
+['46809','BLUFFTON RD',1500,4599,'','C087'],
+['46809','BLUFFTON RD',4600,6799,'','C083'],
+['46809','BLUFFTON RD',6800,7398,'','C094'],
+['46809','BLUFFTON RD',7301,13099,'','C095'],
+['46809','BOARDWALK CIR',2501,3099,'','C095'],
+['46809','BRADBURY AVE',6200,6999,'','C083'],
+['46809','BRADBURY AVE',7000,7599,'','C094'],
+['46809','BRADBURY AVE',7600,7899,'','C095'],
+['46809','BRANSTRATOR RD',8400,11599,'','R008'],
+['46809','BROADRIPPLE DR',2700,3099,'','C083'],
+['46809','BROOKLYN AVE',2900,2998,'E','C086'],
+['46809','BROOKLYN AVE',2901,3098,'O','C087'],
+['46809','BROOKLYN AVE',3001,3099,'O','C086'],
+['46809','BROOKLYN AVE',3100,3199,'','C087'],
+['46809','BROOKLYN AVE',3200,3298,'E','C086'],
+['46809','BROOKLYN AVE',3201,3398,'','C087'],
+['46809','BROOKLYN AVE',3301,3399,'O','C086'],
+['46809','BROOKLYN AVE',3400,3799,'','C087'],
+['46809','BURNSDALE AVE',7300,7499,'','C094'],
+['46809','BUSKIRK RD',11600,11899,'','R008'],
+['46809','N CEDAR CREST CIR',3300,3499,'','C086'],
+['46809','S CEDAR CREST CIR',3300,3499,'','C086'],
+['46809','W CEDAR CREST CIR',4600,4799,'','C086'],
+['46809','CHEYENNE DR',2000,2199,'','C087'],
+['46809','CHURCH ST',2400,2599,'','C094'],
+['46809','CLE ELUM DR',2500,2699,'','C089'],
+['46809','CLEARBROOK DR',3400,3599,'','C095'],
+['46809','CLEVELAND AVE',4500,4598,'E','C087'],
+['46809','CLEVELAND AVE',4501,4599,'O','C089'],
+['46809','CLUBRIDGE DR',9000,9199,'','C095'],
+['46809','COMMERCIAL RD',2400,3099,'','C095'],
+['46809','CONSERVATION WAY',9000,9499,'','R008'],
+['46809','CORVALIS AVE',2500,2899,'','C083'],
+['46809','COVERDALE RD',8100,11899,'','R008'],
+['46809','DALEVUE DR',3400,3599,'','C094'],
+['46809','DALMAN RD',5400,6399,'','R008'],
+['46809','DE FOREST AVE',4300,4398,'E','C087'],
+['46809','DE FOREST AVE',4301,4399,'O','C086'],
+['46809','DE FOREST AVE',4400,5399,'','C089'],
+['46809','DELCON DR',7800,8099,'','R008'],
+['46809','DOROTHY DR',5400,5699,'','R011'],
+['46809','EARHART DR',4500,4599,'','R008'],
+['46809','EARTH DR',4200,4599,'','C086'],
+['46809','ELMAE DR',3900,4199,'','R011'],
+['46809','ELMCREST DR',3500,4199,'','R011'],
+['46809','ELMHURST DR',3300,3799,'','C089'],
+['46809','ELZEY ST',6800,7399,'','C094'],
+['46809','EMERY DR',4600,4699,'','R008'],
+['46809','ENGLE RD',2100,3599,'','C086'],
+['46809','ENOLA CT',3900,4099,'','C086'],
+['46809','ERNST RD',8500,9899,'','R008'],
+['46809','FAIRBROOK CT',2700,2799,'','C083'],
+['46809','FAIROAK DR',2400,3099,'','C083'],
+['46809','FERGUSON RD',2400,4699,'','C095'],
+['46809','FERGUSON RD',4700,7899,'','R008'],
+['46809','FERNWOOD AVE',4900,5999,'','C089'],
+['46809','FERNWOOD AVE',6400,6899,'','C094'],
+['46809','GARDENVIEW AVE',5000,5499,'','C089'],
+['46809','GARDENVIEW DR',6400,6599,'','C083'],
+['46809','GATES CT',6000,6099,'','C083'],
+['46809','GATES DR',5600,5899,'','C089'],
+['46809','GENESSEE AVE',2400,3199,'','C089'],
+['46809','GILBERT DR',2700,2799,'','C089'],
+['46809','GREENVIEW AVE',2500,2899,'','C089'],
+['46809','GRUBER AVE',1700,1899,'','C087'],
+['46809','HABER DR',6000,6499,'','R011'],
+['46809','HARDROCK RD',3900,3999,'','R011'],
+['46809','HIAWATHA BLVD',2200,4199,'','C087'],
+['46809','HICKORY CREEK DR',7100,7499,'','C094'],
+['46809','IDEAL AVE',6600,7599,'','C094'],
+['46809','ILLANINA AVE',3300,3499,'','C086'],
+['46809','INDIAN HILLS DR',3900,4199,'','C086'],
+['46809','INDIAN VILLAGE BLVD',2100,2499,'','C087'],
+['46809','INDIANAPOLIS RD',8700,11499,'','R008'],
+['46809','IROQUOIS CT',3500,3699,'','C087'],
+['46809','KEKIONGA DR',4200,4699,'','C086'],
+['46809','KELLER RD',10600,11099,'','R008'],
+['46809','KELMAR DR',2700,2999,'','C089'],
+['46809','KICKAPOO CT',3500,3699,'','C087'],
+['46809','KILBOURNE DR',7400,7699,'','R011'],
+['46809','KIMBERLEY RD',5500,5899,'','C089'],
+['46809','KINSMOOR AVE',1600,1999,'','C087'],
+['46809','KNOLL RD',3500,3799,'','C089'],
+['46809','KNOLL RD',3800,5399,'','R011'],
+['46809','KNOLLFIELD PL',5000,5199,'','R011'],
+['46809','KOONS ST',2800,3099,'','C094'],
+['46809','KRESS RD',7900,11199,'','R008'],
+['46809','KRUGE DR',7400,7799,'','R011'],
+['46809','KUMFER AVE',7100,7499,'','C094'],
+['46809','KYLE RD',4500,4999,'','C086'],
+['46809','KYLE RD',5000,5004,'E','C089'],
+['46809','KYLE RD',5001,5399,'','C086'],
+['46809','LAND DR',3300,3499,'','C086'],
+['46809','LAREDO AVE',3300,3499,'','C086'],
+['46809','LIBERTY DR',6300,6499,'','C083'],
+['46809','LIGGETT DR',4700,4799,'','C086'],
+['46809','LIMESTONE DR',3700,4199,'','R011'],
+['46809','LORAINE AVE',3300,3399,'','C087'],
+['46809','LORAINE AVE',3400,3499,'','C086'],
+['46809','LOWER HUNTINGTON RD',2400,3499,'','C094'],
+['46809','LOWER HUNTINGTON RD',3500,4399,'','R011'],
+['46809','LOWER HUNTINGTON RD',4400,9899,'','R008'],
+['46809','MACBETH RD',6000,6299,'','R011'],
+['46809','MANITO BLVD',3700,4199,'','C087'],
+['46809','MARK DR',4200,4299,'','C086'],
+['46809','MASON DR',5400,5799,'','C089'],
+['46809','MCARTHUR DR',2600,2698,'E','C095'],
+['46809','MCARTHUR DR',2601,2699,'O','C094'],
+['46809','MCARTHUR DR',2700,2798,'E','C095'],
+['46809','MCARTHUR DR',2701,3699,'','C094'],
+['46809','MCCLURE CT',3900,4199,'','C086'],
+['46809','MCKINLEY AVE',3300,3398,'E','C087'],
+['46809','MCKINLEY AVE',3301,3399,'O','C086'],
+['46809','MCKINLEY AVE',3400,3499,'','C087'],
+['46809','MEADOW LN',4900,5199,'','C089'],
+['46809','MEDA PASS',3500,3899,'','C087'],
+['46809','MEDA PASS',3900,4199,'','C086'],
+['46809','MIAMI LN',3500,3699,'','C087'],
+['46809','MONMOUTH AVE',2400,2699,'','C089'],
+['46809','MORELL DR',2900,3199,'','C089'],
+['46809','MOUND PASS',3900,4199,'','C086'],
+['46809','MUSKODAY PASS',2200,2299,'','C087'],
+['46809','NAVAJO CT',3500,3699,'','C087'],
+['46809','NOKOMIS RD',3700,4099,'','C087'],
+['46809','NUTTMAN AVE',1500,1999,'','C087'],
+['46809','NUTTMAN AVE',2000,2699,'','C086'],
+['46809','OJIBWAY TRL',2400,2699,'','C087'],
+['46809','OJIBWAY TRL',2700,2999,'','C086'],
+['46809','OLD TRAIL RD',5800,7099,'','C083'],
+['46809','OLD TRAIL RD',7100,7198,'E','C095'],
+['46809','OLD TRAIL RD',7101,7199,'O','C083'],
+['46809','OLD TRAIL RD',7200,7499,'','C094'],
+['46809','OLIN AVE',3300,3499,'','C086'],
+['46809','OPECHEE WAY',2200,2599,'','C087'],
+['46809','ORCHARD LN',6000,6599,'','C083'],
+['46809','OWAISSA WAY',2100,3699,'','C087'],
+['46809','OZARK AVE',3300,3499,'','C087'],
+['46809','W PACKARD AVE',1900,2299,'','C086'],
+['46809','E PERIMETER RD',10400,11299,'','C095'],
+['46809','W PERIMETER RD',4700,11599,'','R008'],
+['46809','PINE MANOR CT',2700,2799,'','C083'],
+['46809','PINECREST DR',4600,4799,'','C086'],
+['46809','PINEWOOD DR',2700,2999,'','C083'],
+['46809','PIPER DR',3400,4299,'','C095'],
+['46809','POLYMER PL',4100,4199,'','C086'],
+['46809','PRAIRIE GROVE DR',2500,3199,'','C083'],
+['46809','PRAIRIE MEADOWS DR',9300,9399,'','R008'],
+['46809','QUIMBY ARC',3500,3599,'','C087'],
+['46809','REMINGTON DR',5700,5899,'','C089'],
+['46809','ROCKY KNOLL CT',4100,4199,'','R011'],
+['46809','ROCKY KNOLL DR',4800,5099,'','R011'],
+['46809','ROSALIA DR',5700,5899,'','C089'],
+['46809','RURODE LN',4200,4399,'','R011'],
+['46809','SAINT LOUIS AVE',2400,3099,'','C095'],
+['46809','SANDHILL DR',3200,3399,'','C086'],
+['46809','SANDPOINT RD',2100,2198,'E','C089'],
+['46809','SANDPOINT RD',2101,2199,'O','C087'],
+['46809','SANDPOINT RD',2200,2299,'','C089'],
+['46809','SANDPOINT RD',2300,2399,'','C087'],
+['46809','SANDPOINT RD',2400,2499,'','C089'],
+['46809','SANDPOINT RD',2404,2498,'E','C087'],
+['46809','SANDPOINT RD',2500,3799,'','C089'],
+['46809','SANDPOINT RD',3800,5899,'','R011'],
+['46809','SMITH RD',5300,7599,'','R011'],
+['46809','SMITH RD',7600,11899,'','R008'],
+['46809','SPRUCE DR',3500,3799,'','C089'],
+['46809','SPRUCE LN',5700,5799,'','C089'],
+['46809','TEMPLE DR',2400,8799,'','C095'],
+['46809','THORNLEY DR',4600,4799,'','R011'],
+['46809','THREE OAKS DR',3400,3799,'','C089'],
+['46809','THREE OAKS DR',3800,5099,'','R011'],
+['46809','THURBER AVE',3300,3499,'','C094'],
+['46809','TIELKER RD',4200,4499,'','C086'],
+['46809','TIMBERS DR',2401,2799,'','C089'],
+['46809','TO PE AH DR',9400,9499,'','R008'],
+['46809','TYRONE RD',4700,4798,'E','C086'],
+['46809','TYRONE RD',4701,4799,'O','C089'],
+['46809','TYRONE RD',4800,4898,'E','C086'],
+['46809','TYRONE RD',4801,4998,'','C089'],
+['46809','TYRONE RD',4901,5499,'','C086'],
+['46809','VANGUARD DR',3700,3999,'','C095'],
+['46809','VERA AVE',7600,7699,'','C095'],
+['46809','VERNON AVE',2400,2498,'E','C087'],
+['46809','VERNON AVE',2401,2499,'O','C087'],
+['46809','VERNON AVE',2500,2698,'','C089'],
+['46809','VERNON AVE',2601,2699,'O','C087'],
+['46809','VERNON AVE',2700,2798,'E','C089'],
+['46809','VERNON AVE',2701,2799,'O','C087'],
+['46809','VESEY AVE',3100,3599,'','C087'],
+['46809','WAWONAISSA TRL',2100,4099,'','C087'],
+['46809','WAYNEDALE BLVD',2500,3099,'','C083'],
+['46809','WAYNEWOOD DR',2400,3099,'','C083'],
+['46809','WENDIGO LN',2400,2599,'','C086'],
+['46809','WENDOVER RD',3200,3299,'','C086'],
+['46809','WENONAH LN',3500,4199,'','C086'],
+['46809','WESTWARD DR',2500,2698,'','C094'],
+['46809','WESTWARD DR',2801,2899,'O','C095'],
+['46809','WESTWARD DR',2900,2998,'E','C094'],
+['46809','WESTWARD DR',2901,2999,'O','C095'],
+['46809','WHIPPOORWILL DR',9100,9699,'','R008'],
+['46809','WHITNEY AVE',5700,5999,'','R008'],
+['46809','WILLOW OAKS DR',2600,3199,'','C089'],
+['46809','WINDY KNOLL CT',5000,5199,'','R011'],
+['46809','WINTERS RD',2400,4399,'','C095'],
+['46809','WINTERS RD',5400,9399,'','R008'],
+['46809','WITCHWOOD DR',2700,3099,'','C083'],
+['46809','WOODHEATH AVE',5600,5999,'','C089'],
+['46809','YEAGER DR',9100,9499,'','R008'],
+['46809','YOHNE RD',5400,8299,'','R008'],
+['46819','AIRLINE DR',1500,1599,'','C093'],
+['46819','ALLISON AVE',7500,7999,'','C097'],
+['46819','AMHERST DR',7800,8199,'','C098'],
+['46819','S ANTHONY EXT',10500,15499,'','R004'],
+['46819','ARDIS DR',800,899,'','C091'],
+['46819','ARDIS DR',900,1099,'','C080'],
+['46819','ARDIS ST',1400,2099,'','C080'],
+['46819','ASHTON POINTE BLVD',8900,9299,'','C098'],
+['46819','AVALON DR',7000,7599,'','C093'],
+['46819','AYLESFORD DR',900,1099,'','C091'],
+['46819','BABCOCK DR',1600,1999,'','C080'],
+['46819','BABCOCK LN',1500,1599,'','C080'],
+['46819','BAER FIELD THRUWAY',6000,8799,'','C091'],
+['46819','BAYLOR DR',7200,7499,'','C098'],
+['46819','BEAVANS RD',12000,12199,'','R004'],
+['46819','BLAIR RD',2100,2399,'','R004'],
+['46819','BLUE MIST RD',6600,7099,'','C091'],
+['46819','BLUFFTON RD',14800,16399,'','R004'],
+['46819','BOGGS AVE',800,999,'','C097'],
+['46819','BOSTICK RD',2600,3399,'','R004'],
+['46819','BOSUNS DR',600,999,'','C097'],
+['46819','BRECKENWOOD DR',7400,7799,'','C093'],
+['46819','BRIDGETON CT',100,199,'','R026'],
+['46819','BROOKLANE DR',11500,11699,'','R004'],
+['46819','BRYANT CT',2200,2299,'','C098'],
+['46819','BURR OAK DR',9100,9299,'','C097'],
+['46819','CAPRI DR',7300,7499,'','C093'],
+['46819','CHARLOTTE ST',3800,3999,'','R004'],
+['46819','CHEPEQUAH LN',5100,5199,'','C080'],
+['46819','CHESAPEAKE PT',9800,9899,'','C097'],
+['46819','CHESTER BLVD',5600,5899,'','C080'],
+['46819','CHESTERFIELD RUN',8600,8699,'','C097'],
+['46819','CLAYBURN CT',800,899,'','C080'],
+['46819','CLAYBURN DR',900,1099,'','C080'],
+['46819','CLEMSON DR',7200,7399,'','C098'],
+['46819','COLGATE DR',2200,2299,'','C098'],
+['46819','COMER RD',14200,17899,'','R004'],
+['46819','COMMUNITY LN',7900,8199,'','C098'],
+['46819','CONNORS RD',13400,17899,'','R004'],
+['46819','CORLINE ST',6800,6998,'','C080'],
+['46819','CORLINE ST',6905,7299,'','C093'],
+['46819','S COUNTY LINE RD E',101,1799,'','R004'],
+['46819','S COUNTY LINE RD W',100,398,'E','R004'],
+['46819','CRESTWAY DR',900,1099,'','C080'],
+['46819','DADE DR',2300,2399,'','C093'],
+['46819','DALE DR',2100,2399,'','C098'],
+['46819','DODANE RD',500,1599,'','R004'],
+['46819','DONNA DR',6200,6599,'','C080'],
+['46819','DRAKE DR',2200,2299,'','C098'],
+['46819','DUNKELBERG RD',200,1099,'','C097'],
+['46819','DUNKELBERG RD',1100,2399,'','C098'],
+['46819','DURBAN DR',7900,7999,'','C098'],
+['46819','DURBAN DR',8000,8098,'E','C093'],
+['46819','DURBAN DR',8001,8099,'O','C098'],
+['46819','EDINBURGH LN',8600,8699,'','C097'],
+['46819','EILEEN ST',1800,1999,'','C093'],
+['46819','EVERGLADE CT',7900,7999,'','C098'],
+['46819','FAIROAK DR',2100,2199,'','C098'],
+['46819','FAIROAK DR',2200,2299,'','C093'],
+['46819','FAIROAK DR',2300,2399,'','C098'],
+['46819','E FERGUSON RD',100,299,'','C097'],
+['46819','W FERGUSON RD',100,2399,'','C097'],
+['46819','FILLMORE ST',3800,3900,'','R004'],
+['46819','GILFORD DR',2300,2399,'','C098'],
+['46819','GINSENG LN',1000,1099,'','C098'],
+['46819','GLAMIS AVE',2300,2399,'','R004'],
+['46819','GODFREY RD',1600,1799,'','C080'],
+['46819','GREENLEAF DR',8900,9299,'','C097'],
+['46819','HALSTONE LN',1000,1099,'','C097'],
+['46819','E HAMILTON RD',100,799,'','R004'],
+['46819','W HAMILTON RD',600,2399,'','R004'],
+['46819','HARBOR WALK DR',500,999,'','C097'],
+['46819','HARTZELL ST',1800,1999,'','C080'],
+['46819','HEATHERTON DR',6800,7099,'','C080'],
+['46819','HEMPFORD CT',700,799,'','C097'],
+['46819','HEMPFORD DR',8600,8899,'','C097'],
+['46819','HEMPFORD PL',800,899,'','C097'],
+['46819','HEMPHILL DR',8900,9799,'','C097'],
+['46819','HILTONIA DR',6700,6999,'','C093'],
+['46819','HOLLYHILL DR',900,1099,'','C080'],
+['46819','HOPEWELL DR',1800,1999,'','C093'],
+['46819','HUNTS LN',2400,2599,'','R004'],
+['46819','INTERLAKEN DR',2200,2399,'','C080'],
+['46819','KINGSWAY DR',7300,7799,'','C093'],
+['46819','KINNERK RD',7301,10399,'','C097'],
+['46819','KNIGHTSWOOD DR',7200,7899,'','C091'],
+['46819','KOESTER DR',6600,6898,'','C093'],
+['46819','KOESTER DR',6801,6998,'','C098'],
+['46819','KOESTER DR',6901,6999,'O','C093'],
+['46819','LAFOUNTAIN DR',12200,12299,'','R004'],
+['46819','LAHRMAN RD',200,12899,'','R004'],
+['46819','LAKERIDGE DR',7200,7699,'','C091'],
+['46819','LAKERIDGE PL',800,999,'','C091'],
+['46819','LAKEWOOD CT',6700,6799,'','C080'],
+['46819','LAKEWOOD DR',1300,2199,'','C080'],
+['46819','E LAWN DR',900,1099,'','C091'],
+['46819','LEGOMA DR',1700,2299,'','C098'],
+['46819','LEHMAN RD',2800,3199,'','R004'],
+['46819','LIBERTY DR',6500,6528,'E','C098'],
+['46819','LIBERTY DR',6501,6699,'','C093'],
+['46819','LIBERTY DR',6700,6799,'','C098'],
+['46819','LIGHTHOUSE CT',900,999,'','C097'],
+['46819','LINCOLNWAY CT',2000,2399,'','C098'],
+['46819','LOTHAMER DR',14900,15299,'','R004'],
+['46819','LOWELL CT',8500,8599,'','C097'],
+['46819','LOWER HUNTINGTON RD',400,1199,'','C091'],
+['46819','LOWER HUNTINGTON RD',1200,1298,'E','C093'],
+['46819','LOWER HUNTINGTON RD',1201,1299,'O','C091'],
+['46819','LOWER HUNTINGTON RD',1300,1398,'E','C093'],
+['46819','LOWER HUNTINGTON RD',1301,1399,'O','C091'],
+['46819','LOWER HUNTINGTON RD',1400,1498,'E','C093'],
+['46819','LOWER HUNTINGTON RD',1401,1799,'O','C091'],
+['46819','LOWER HUNTINGTON RD',1800,1898,'','C093'],
+['46819','LOWER HUNTINGTON RD',1837,1839,'O','C091'],
+['46819','LOWER HUNTINGTON RD',1841,2399,'','C093'],
+['46819','LUTZ RD',16700,16799,'','R004'],
+['46819','MAJIC PORT LN',10501,10699,'','C097'],
+['46819','MAPLEWOOD RD',1700,2399,'','C098'],
+['46819','MARINERS RIDGE CT',500,599,'','C097'],
+['46819','MARINERS RIDGE DR',8900,9799,'','C097'],
+['46819','MAYFLOWER RD',1600,1899,'','C080'],
+['46819','MAYWOOD CIR',6200,6299,'','C080'],
+['46819','MAYWOOD CIR',6300,6699,'','C093'],
+['46819','MCCRORY DR',10000,10199,'','R026'],
+['46819','MILL RUN RD',7200,7799,'','C091'],
+['46819','MONTEREY CT',6700,6799,'','C080'],
+['46819','MONTEREY DR',6800,7099,'','C093'],
+['46819','MULDOON RD',9000,10399,'','R026'],
+['46819','MULDOON RD',10400,10999,'','R004'],
+['46819','NIGHTFALL RD',600,799,'','C091'],
+['46819','OLYMPIA DR',1000,1099,'','C080'],
+['46819','PACIFIC DR',1400,1799,'','C093'],
+['46819','PENMOKEN DR',6700,7199,'','C091'],
+['46819','PENMOKEN DR',7200,7299,'','C080'],
+['46819','PINEDALE DR',7400,7799,'','C093'],
+['46819','PINETREE DR',500,999,'','C097'],
+['46819','E PLEASANT CENTER RD',100,1299,'','R004'],
+['46819','W PLEASANT CENTER RD',100,2399,'','R004'],
+['46819','PLEASANT RIDGE DR',1900,2399,'','R004'],
+['46819','PLEASANT WOODS DR',15700,15799,'','R004'],
+['46819','POINTE CENTER CV',900,1099,'','C091'],
+['46819','POSTAGE DUE',1,1,'','C000'],
+['46819','PREMIERE DR',6900,7199,'','C093'],
+['46819','REDARANI DR',26800,26899,'','R004'],
+['46819','REDFIELD DR',8900,9299,'','C097'],
+['46819','REHM DR',2100,2399,'','C098'],
+['46819','RESERVATION DR',1800,2399,'','C098'],
+['46819','RESERVE LINE RD',6300,6699,'','C080'],
+['46819','RIDGETREE DR',9000,9299,'','C097'],
+['46819','RIVER CT',5400,5499,'','C080'],
+['46819','RIVER HAZE',6800,7099,'','C091'],
+['46819','RIVERTREE DR',700,799,'','C097'],
+['46819','RIVERWAY DR',1500,1599,'','C080'],
+['46819','ROCHESTER LN',1000,1099,'','C097'],
+['46819','ROCK CV',6300,6499,'','C080'],
+['46819','ROCK BLUFF CT',6300,6399,'','C080'],
+['46819','ROCKCLIFF CT',900,999,'','C097'],
+['46819','RUTGERS DR',2200,2299,'','C088'],
+['46819','SAINT LOUIS AVE',1600,2399,'','C098'],
+['46819','SANDRA LEE AVE',5600,5899,'','C080'],
+['46819','SCOTTSDALE DR',1600,1799,'','C080'],
+['46819','SEA PINES WAY',9500,9799,'','C097'],
+['46819','SHAMROCK RD',1600,1899,'','C080'],
+['46819','SHERWOOD DR',900,999,'','C097'],
+['46819','SHOALS DR',9400,9799,'','C097'],
+['46819','SHOREVIEW DR',1200,1799,'','C080'],
+['46819','SHOREWORTH TRL',1000,1099,'','C080'],
+['46819','SNOWFALL CT',7200,7299,'','C097'],
+['46819','SNOWFALL RD',700,799,'','C097'],
+['46819','SPRINGHILL DR',7200,7499,'','C093'],
+['46819','STEPHANS DR',400,599,'','R026'],
+['46819','SUNFLOWER CV',8900,9199,'','C098'],
+['46819','TAYLOR ST',15900,15999,'','R004'],
+['46819','THIELE RD',9600,10399,'','R026'],
+['46819','THIELE RD',10400,17899,'','R004'],
+['46819','VILLA DR',2000,2399,'','C098'],
+['46819','WAYNEWOOD DR',2300,2399,'','C093'],
+['46819','WIN AVE',1600,1799,'','C080'],
+['46819','WINCHESTER LN',900,1099,'','C097'],
+['46819','WINCHESTER RD',4900,6299,'','C080'],
+['46819','WINCHESTER RD',6300,7099,'','C091'],
+['46819','WINCHESTER RD',7100,10399,'','C097'],
+['46819','WINCHESTER RD',10400,16299,'','R004'],
+['46819','WINCHESTER RIDGE CT',600,699,'','C097'],
+['46819','WINCHESTER RIDGE DR',8600,8899,'','C097'],
+['46819','WINDJAMMER CT',500,599,'','C097'],
+['46819','WINTERS RD',400,2399,'','R004'],
+['46819','WINTERSET RD',600,799,'','C091'],
+['46819','WOHAMA DR',7400,7899,'','C093'],
+['46819','WOODHAVEN DR',1800,2099,'','C080'],
+['46819','WORTH DR',7600,7799,'','C093'],
+['46819','WYSS MEADOWS DR',8500,8599,'','C097'],
+['46819','WYSS RIDGE DR',500,799,'','C097'],
+['46819','WYSSTEAD DR',2400,2599,'','R004'],
+['46819','E YODER RD',100,3999,'','R004'],
+['46819','W YODER RD',100,2399,'','R004'],
+['46819','E 1200 N-90',4500,4998,'E','R004'],
+['46819','E 1200 N-90',5000,5998,'E','R004'],
+];
+
+const DIRECTION_MAP = {north:'N',south:'S',east:'E',west:'W',n:'N',s:'S',w:'W'};
+const PARITY_MAP    = {even:'E',odd:'O',e:'E',o:'O'};
+const CARRIER_RE    = /^[CcRr]\d{1,3}$/;
+
+function parseQuery(raw) {
+  const text = raw.toLowerCase().replace(/\b(\d+)\s+hundred\b/g, (_,n) => String(parseInt(n)*100));
+  let number=null, isBlock=false, direction=null, parity=null;
+  const streetWords=[];
+  for (const token of text.trim().split(/\s+/)) {
+    if (!token) continue;
+    if (/^\d+$/.test(token)) {
+      const n=parseInt(token);
+      if (token.length<=2) { number=n*100; isBlock=true; }
+      else                  { number=n;    isBlock=false; }
+    } else if (token in PARITY_MAP)    { parity=PARITY_MAP[token]; }
+    else if (token in DIRECTION_MAP)   { direction=DIRECTION_MAP[token]; }
+    else                               { streetWords.push(token); }
+  }
+  return {number,isBlock,direction,parity,streetWords};
+}
+
+function doSearch(raw) {
+  if (!raw.trim()) return [];
+  const {number,isBlock,direction,parity,streetWords}=parseQuery(raw);
+  const results=[];
+  for (const r of ROUTES) {
+    const [zip,street,start,end,rParity,carrier]=r;
+    if (number!==null) {
+      if (isBlock) { if (start>number+99||end<number) continue; }
+      else         { if (start>number||end<number)    continue; }
+    }
+    if (parity) {
+      if (rParity && rParity!==parity) continue;
+    } else if (number!==null && !isBlock) {
+      const auto=number%2===0?'E':'O';
+      if (rParity && rParity!==auto) continue;
+    }
+    if (direction) {
+      if (!street.startsWith(direction+' ') && !street.includes(' '+direction)) continue;
+    }
+    let wordMatch=true;
+    for (const word of streetWords) {
+      const low=street.toLowerCase();
+      if (word.length===1) { if (!low.startsWith(word)&&!low.includes(' '+word)){wordMatch=false;break;} }
+      else                 { if (!low.includes(word)){wordMatch=false;break;} }
+    }
+    if (!wordMatch) continue;
+    results.push({zip,street,start,end,parity:rParity,carrier});
+    if (results.length>=30) break;
+  }
+  return results;
+}
+
+function doCarrier(raw) {
+  const upper=raw.trim().toUpperCase();
+  if (!CARRIER_RE.test(upper)) return [];
+  const prefix=upper[0];
+  const digits=upper.slice(1);
+  return ROUTES
+    .filter(r=>r[5].toUpperCase().startsWith(prefix)&&r[5].slice(1).includes(digits))
+    .map(r=>({zip:r[0],street:r[1],start:r[2],end:r[3],parity:r[4],carrier:r[5]}));
+}
+
+const queryEl  = document.getElementById('query');
+const resultsEl= document.getElementById('results');
+const micBtn   = document.getElementById('micBtn');
+let debounce;
+
+queryEl.addEventListener('input', ()=>{
+  clearTimeout(debounce);
+  debounce=setTimeout(()=>runSearch(queryEl.value),220);
+});
+
+function clearAll() {
+  queryEl.value='';
+  resultsEl.innerHTML='<p class="hint">Type or speak an address — number, street, even/odd<br>Or type C087 / R008 to list all streets on a route</p>';
+  queryEl.focus();
+}
+
+function par(code) { return code==='E'?' · Even':code==='O'?' · Odd':''; }
+
+function runSearch(q) {
+  const trimmed=q.trim();
+  if (!trimmed){clearAll();return;}
+  if (CARRIER_RE.test(trimmed)) renderCarrier(doCarrier(trimmed));
+  else                          renderSearch(doSearch(trimmed));
+}
+
+function renderSearch(results) {
+  if (!results.length){resultsEl.innerHTML='<p class="hint">No match — try just the street name or number</p>';return;}
+  if (results.length===1) {
+    const r=results[0];
+    resultsEl.innerHTML=`<div class="big-result"><div class="carrier">${r.carrier}</div><div class="detail">${r.street} &nbsp; ${r.start}–${r.end}${par(r.parity)}</div><div class="zip">${r.zip}</div></div>`;
+    return;
+  }
+  resultsEl.innerHTML=results.map(r=>`
+    <div class="result-item">
+      <div class="carrier">${r.carrier}</div>
+      <div class="info">
+        <div class="street">${r.street}</div>
+        <div class="range">${r.start}–${r.end}${par(r.parity)} &nbsp;·&nbsp; ${r.zip}</div>
+      </div>
+    </div>`).join('');
+}
+
+function renderCarrier(results) {
+  if (!results.length){resultsEl.innerHTML='<p class="hint">No streets found for that carrier</p>';return;}
+  const codes=[...new Set(results.map(r=>r.carrier))].sort().join(', ');
+  resultsEl.innerHTML=
+    `<div class="carrier-header"><span class="code">${codes}</span><span class="count">${results.length} entries</span></div>`+
+    results.map(r=>`
+      <div class="carrier-item">
+        <div class="ci-carrier">${r.carrier}</div>
+        <div class="ci-info">
+          <div class="ci-street">${r.street}</div>
+          <div class="ci-detail">${r.start}–${r.end}${par(r.parity)} · ${r.zip}</div>
+        </div>
+      </div>`).join('');
+}
+
+const SpeechRec=window.SpeechRecognition||window.webkitSpeechRecognition;
+if (SpeechRec) {
+  const rec=new SpeechRec();
+  rec.lang='en-US'; rec.interimResults=false; rec.maxAlternatives=1;
+  let listening=false;
+  rec.onresult=e=>{const t=e.results[0][0].transcript;queryEl.value=t;runSearch(t);};
+  rec.onend=()=>{listening=false;queryEl.classList.remove('listening');micBtn.classList.remove('active');};
+  rec.onerror=()=>{listening=false;queryEl.classList.remove('listening');micBtn.classList.remove('active');};
+  function startRec(e){e.preventDefault();if(listening)return;listening=true;queryEl.classList.add('listening');micBtn.classList.add('active');try{rec.start();}catch(_){}}
+  function stopRec(e){e.preventDefault();if(!listening)return;try{rec.stop();}catch(_){}}
+  micBtn.addEventListener('mousedown',startRec);
+  micBtn.addEventListener('touchstart',startRec,{passive:false});
+  micBtn.addEventListener('mouseup',stopRec);
+  micBtn.addEventListener('touchend',stopRec,{passive:false});
+  micBtn.addEventListener('mouseleave',stopRec);
+} else { micBtn.style.display='none'; }
+</script>
+</body>
+</html>
