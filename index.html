@@ -5,40 +5,82 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <title>Waynedale Routes</title>
 <style>
+  /* ── Theme variables ── */
+  :root {
+    --bg: #111;
+    --text: #eee;
+    --panel: #1e1e1e;
+    --panel2: #1a1a1a;
+    --border: #2a2a2a;
+    --border2: #222;
+    --input-bg: #1e1e1e;
+    --input-border: #333;
+    --btn-bg: #2a2a2a;
+    --accent: #e94560;
+    --accent-soft: #ff8099;
+    --detail: #d0d0d0;   /* address ranges — brighter */
+    --zip: #cccccc;      /* zip code — brighter */
+    --count: #999;
+    --hint: #666;
+  }
+  :root[data-theme="light"] {
+    --bg: #f4f4f7;
+    --text: #161616;
+    --panel: #ffffff;
+    --panel2: #f0f0f4;
+    --border: #d8d8e0;
+    --border2: #e4e4ea;
+    --input-bg: #ffffff;
+    --input-border: #c6c6d0;
+    --btn-bg: #e7e7ee;
+    --accent: #d4194a;
+    --accent-soft: #e0466f;
+    --detail: #333333;
+    --zip: #444444;
+    --count: #777;
+    --hint: #999;
+  }
+
   * { box-sizing: border-box; margin: 0; padding: 0; }
+
   body {
     font-family: Arial, sans-serif;
-    background: #111;
-    color: #eee;
+    background: var(--bg);
+    color: var(--text);
     height: 100dvh;
     display: flex;
     flex-direction: column;
     padding: 12px;
     gap: 12px;
+    transition: background 0.15s, color 0.15s;
   }
+
   .bar { display: flex; gap: 8px; }
   #query {
     flex: 1;
+    min-width: 0;
     font-size: 1.8rem;
     padding: 10px 14px;
-    border: 2px solid #333;
+    border: 2px solid var(--input-border);
     border-radius: 10px;
-    background: #1e1e1e;
-    color: #fff;
+    background: var(--input-bg);
+    color: var(--text);
     outline: none;
   }
-  #query:focus { border-color: #e94560; }
+  #query:focus { border-color: var(--accent); }
+
   .btn {
-    font-size: 1.6rem;
-    padding: 10px 16px;
+    font-size: 1.5rem;
+    padding: 10px 13px;
     border: none;
     border-radius: 10px;
-    background: #2a2a2a;
-    color: #eee;
+    background: var(--btn-bg);
+    color: var(--text);
     cursor: pointer;
     touch-action: manipulation;
   }
-  .btn:active, .btn.active { background: #e94560; }
+  .btn:active, .btn.active { background: var(--accent); }
+
   #results {
     flex: 1;
     overflow-y: auto;
@@ -46,6 +88,8 @@
     flex-direction: column;
     gap: 8px;
   }
+
+  /* Single unambiguous result */
   .big-result {
     display: flex;
     flex-direction: column;
@@ -57,54 +101,113 @@
   .big-result .carrier {
     font-size: clamp(5rem, 22vw, 11rem);
     font-weight: 900;
-    color: #e94560;
+    color: var(--accent);
     line-height: 1;
     letter-spacing: -2px;
   }
-  .big-result .detail { font-size: clamp(1rem, 4vw, 1.6rem); color: #888; margin-top: 10px; }
-  .big-result .zip { font-size: 1rem; color: #555; margin-top: 4px; }
+  .big-result .detail {
+    font-size: clamp(1.3rem, 5vw, 2rem);
+    font-weight: 700;
+    color: var(--detail);
+    margin-top: 12px;
+  }
+  .big-result .zip {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--zip);
+    margin-top: 6px;
+  }
+
+  /* Multiple results list */
   .result-item {
     display: flex;
     align-items: center;
     gap: 16px;
-    background: #1e1e1e;
+    background: var(--panel);
     border-radius: 10px;
     padding: 14px 18px;
-    border: 1px solid #2a2a2a;
+    border: 1px solid var(--border);
   }
-  .result-item .carrier { font-size: 2.2rem; font-weight: 900; color: #e94560; min-width: 90px; }
+  .result-item .carrier {
+    font-size: 2.2rem;
+    font-weight: 900;
+    color: var(--accent);
+    min-width: 90px;
+  }
   .result-item .info { flex: 1; }
-  .result-item .street { font-size: 1.1rem; font-weight: bold; }
-  .result-item .range { font-size: 0.9rem; color: #888; margin-top: 2px; }
-  .hint { text-align: center; color: #444; font-size: 1rem; padding: 20px; }
+  .result-item .street {
+    font-size: 1.15rem;
+    font-weight: bold;
+  }
+  .result-item .range {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--detail);
+    margin-top: 3px;
+  }
+
+  /* Status / hint */
+  .hint {
+    text-align: center;
+    color: var(--hint);
+    font-size: 1rem;
+    padding: 20px;
+  }
+
+  /* ── Carrier reverse-lookup view ── */
   .carrier-header {
     display: flex;
     align-items: baseline;
     gap: 14px;
     padding: 14px 18px;
-    background: #1e1e1e;
+    background: var(--panel);
     border-radius: 10px;
-    border: 2px solid #e94560;
+    border: 2px solid var(--accent);
   }
-  .carrier-header .code { font-size: 2.6rem; font-weight: 900; color: #e94560; }
-  .carrier-header .count { font-size: 0.95rem; color: #555; }
+  .carrier-header .code {
+    font-size: 2.6rem;
+    font-weight: 900;
+    color: var(--accent);
+  }
+  .carrier-header .count {
+    font-size: 0.95rem;
+    color: var(--count);
+  }
   .carrier-item {
     display: flex;
     align-items: center;
     gap: 12px;
     padding: 10px 16px;
-    background: #1a1a1a;
+    background: var(--panel2);
     border-radius: 8px;
-    border: 1px solid #222;
+    border: 1px solid var(--border2);
   }
-  .carrier-item .ci-carrier { font-size: 1.1rem; font-weight: 900; color: #e94560; min-width: 56px; }
+  .carrier-item .ci-carrier {
+    font-size: 1.1rem;
+    font-weight: 900;
+    color: var(--accent);
+    min-width: 56px;
+  }
   .carrier-item .ci-info { flex: 1; }
-  .carrier-item .ci-street { font-size: 1rem; font-weight: bold; }
-  .carrier-item .ci-detail { font-size: 0.82rem; color: #666; margin-top: 2px; }
-  #query.listening { border-color: #e94560; animation: pulse 1s infinite; }
+  .carrier-item .ci-street {
+    font-size: 1.05rem;
+    font-weight: bold;
+  }
+  .carrier-item .ci-detail {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--detail);
+    margin-top: 3px;
+  }
+
+  /* Voice listening indicator */
+  #query.listening {
+    border-color: var(--accent);
+    animation: pulse 1s infinite;
+  }
   @keyframes pulse {
-    0%,100% { border-color: #e94560; }
-    50%      { border-color: #ff8099; }
+    0%,100% { border-color: var(--accent); }
+    50%      { border-color: var(--accent-soft); }
   }
 </style>
 </head>
@@ -113,6 +216,7 @@
 <div class="bar">
   <input id="query" type="text" placeholder="Address or street name…" autocomplete="off" autocorrect="off" spellcheck="false">
   <button class="btn" id="micBtn" title="Voice input">🎤</button>
+  <button class="btn" id="themeBtn" title="Light / dark mode">🌙</button>
   <button class="btn" onclick="clearAll()" title="Clear">✕</button>
 </div>
 
@@ -638,7 +742,26 @@ function doCarrier(raw) {
 const queryEl  = document.getElementById('query');
 const resultsEl= document.getElementById('results');
 const micBtn   = document.getElementById('micBtn');
+const themeBtn = document.getElementById('themeBtn');
 let debounce;
+
+// ── Light / dark theme ──
+function applyTheme(mode) {
+  if (mode === 'light') {
+    document.documentElement.setAttribute('data-theme', 'light');
+    themeBtn.textContent = '☀️';
+  } else {
+    document.documentElement.removeAttribute('data-theme');
+    themeBtn.textContent = '🌙';
+  }
+}
+let theme = localStorage.getItem('theme') || 'dark';
+applyTheme(theme);
+themeBtn.addEventListener('click', () => {
+  theme = (theme === 'light') ? 'dark' : 'light';
+  localStorage.setItem('theme', theme);
+  applyTheme(theme);
+});
 
 queryEl.addEventListener('input', ()=>{
   clearTimeout(debounce);
